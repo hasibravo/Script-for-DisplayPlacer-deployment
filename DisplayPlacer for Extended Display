@@ -1,0 +1,86 @@
+#!/bin/bash
+
+# -----------------------------------------------------------------------------
+# Script Name:     DisplayPlacer.sh
+# Author:          Muhammad Hasib
+# Created:         25Jul2024
+# Last Modified:   25Jul2024
+# Description:     This script checks the system architecture, downloads and
+#                  installs the appropriate version of displayplacer, and 
+#                  configures display settings for extending built-in and 
+#                  external screens with specified resolution, refresh rate, 
+#                  color depth, and scaling.
+# -----------------------------------------------------------------------------
+
+
+# Define variables for display settings
+RESOLUTION=""
+HZ=""
+COLOR_DEPTH=""
+SCALING=""
+
+# Define paths
+DISPLAYPLACER_PATH="/usr/local/bin/displayplacer"
+DISPLAYPLACER_URL_APPLE="https://github.com/jakehilborn/displayplacer/releases/download/v1.4.0/displayplacer-apple-v140"
+DISPLAYPLACER_URL_INTEL="https://github.com/jakehilborn/displayplacer/releases/download/v1.4.0/displayplacer-intel-v140"
+
+# Determine the architecture
+ARCH=$(uname -m)
+if [[ "$ARCH" == "arm64" ]]; then
+    DISPLAYPLACER_URL="$DISPLAYPLACER_URL_APPLE"
+else
+    DISPLAYPLACER_URL="$DISPLAYPLACER_URL_INTEL"
+fi
+
+# Download and install displayplacer if not found
+if [ ! -f "$DISPLAYPLACER_PATH" ]; then
+    echo "displayplacer not found. Downloading and installing..."
+    curl -L "$DISPLAYPLACER_URL" -o /tmp/displayplacer
+    chmod +x /tmp/displayplacer
+    sudo mv /tmp/displayplacer "$DISPLAYPLACER_PATH"
+    echo "displayplacer installed at $DISPLAYPLACER_PATH."
+fi
+
+# List current display configurations and store the output
+DISPLAY_CONFIG=$($DISPLAYPLACER_PATH list)
+
+# Initialize arrays
+BUILT_IN_ID=""
+EXTERNAL_ID=""
+
+# Process the display configurations
+while read -r line; do
+    if [[ "$line" =~ Persistent\ screen\ id:\ ([^ ]+) ]]; then
+        PERSISTENT_ID="${BASH_REMATCH[1]}"
+    elif [[ "$line" =~ Type:\ (.+) ]]; then
+        TYPE="${BASH_REMATCH[1]}"
+        
+        # Assign persistent ID based on screen type
+        if [[ "$TYPE" == *"built in"* ]]; then
+            BUILT_IN_ID="$PERSISTENT_ID"
+        else
+            EXTERNAL_ID="$PERSISTENT_ID"
+        fi
+    fi
+done <<< "$DISPLAY_CONFIG"
+
+# Check if both screen IDs are found
+if [ -z "$BUILT_IN_ID" ] || [ -z "$EXTERNAL_ID" ]; then
+    echo "Could not find both built-in and external screens."
+    exit 1
+fi
+
+# Debug: print extracted persistent ids
+echo "Built-in screen ID: $BUILT_IN_ID"
+echo "External screen ID: $EXTERNAL_ID"
+
+# Construct the displayplacer command for extending displays
+CMD="$DISPLAYPLACER_PATH"
+CMD+=" \"id:$BUILT_IN_ID res:$RESOLUTION hz:$HZ color_depth:$COLOR_DEPTH enabled:true scaling:$SCALING\""
+CMD+=" \"id:$EXTERNAL_ID res:$RESOLUTION hz:$HZ color_depth:$COLOR_DEPTH enabled:true scaling:$SCALING\""
+
+# Debug: print the command that will be executed
+echo "Executing command: $CMD"
+
+# Execute the constructed command
+eval $CMD
